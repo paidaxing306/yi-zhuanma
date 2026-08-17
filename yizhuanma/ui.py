@@ -258,6 +258,36 @@ class MainWindow(QMainWindow):
         self._apply_qss()
         # 整个窗口都接受拖入视频（拖到列表/按钮区域也能添加）
         self.setAcceptDrops(True)
+        # 延迟 3 秒后台检测更新（不阻塞启动，失败静默不影响使用）
+        QTimer.singleShot(3000, self._check_update)
+
+    def _check_update(self):
+        if getattr(self, "_update_worker", None) and \
+                self._update_worker.isRunning():
+            return
+        self._update_worker = UpdateWorker(self)
+        self._update_worker.update_found.connect(self._on_update_found)
+        self._update_worker.start()
+
+    def _on_update_found(self, latest_tag: str, url: str):
+        """发现新版本：询问是否前往下载；跳过不影响使用"""
+        from .updater import has_update
+
+        if not has_update(__version__, latest_tag):
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("发现新版本")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(
+            f"发现新版本 {latest_tag}（当前 {__version__}）\n\n"
+            "是否前往 GitHub 下载更新？\n"
+            "下载后关闭本程序，用新版本替换即可。")
+        btn_dl = box.addButton("去下载", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("跳过", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is btn_dl:
+            import webbrowser
+            webbrowser.open(url)
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -382,10 +412,11 @@ class MainWindow(QMainWindow):
         prog_row.addWidget(self.status)
         root.addLayout(prog_row)
 
-        # footer 作者信息
+        # footer 作者信息 + 仓库地址（不显眼的小字）
         footer = QLabel(
             f"{APP_TITLE} v{__version__}  ·  作者：{AUTHOR}  ·  "
-            f"联系方式：{CONTACT}")
+            f"联系方式：{CONTACT}\n"
+            "项目地址：github.com/paidaxing306/yi-zhuanma")
         footer.setObjectName("footer")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(footer)
@@ -605,6 +636,21 @@ class EstimateWorker(QThread):
             except Exception:  # noqa: BLE001 探测失败按无法估算处理
                 est = None
             self.estimate_ready.emit(i, est)
+
+
+class UpdateWorker(QThread):
+    """后台查询 GitHub 最新 release（不阻塞界面，失败静默）"""
+
+    update_found = Signal(str, str)  # latest_tag, 下载页URL
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def run(self):
+        from .updater import check_latest
+        result = check_latest()
+        if result:
+            self.update_found.emit(result[0], result[1])
 
 
 class _SignalForwarder:
