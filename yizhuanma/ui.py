@@ -3,9 +3,14 @@
 （hover 展示码率表）、任务列表与进度。"""
 import logging
 import os
+import time as _time
 
-from PySide6.QtCore import QPoint, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication
+from PySide6.QtCore import QPoint, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QGuiApplication
+
+
+def _now() -> float:
+    return _time.monotonic()
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton,
@@ -13,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import AUTHOR, CONTACT, APP_TITLE, __version__
-from .presets import PRESETS, PRESET_YOUTUBE, table_html
+from .presets import DEFAULT_PRESET, PRESET_NAMES, table_html
 
 log = logging.getLogger("yizhuanma")
 
@@ -66,7 +71,10 @@ def _human_size(n: int) -> str:
 
 
 class InfoLabel(QLabel):
-    """悬停/点击显示码率表的 ℹ 图标"""
+    """悬停/点击显示码率表的 ℹ 图标。
+
+    悬停显示：鼠标移开自动消失；点击显示：再点一次关闭。
+    """
 
     def __init__(self, popup, parent=None):
         super().__init__("ℹ", parent)
@@ -77,35 +85,46 @@ class InfoLabel(QLabel):
             "padding:0 4px;")
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(250)
+        self._timer.setInterval(500)
         self._timer.timeout.connect(self._show)
-        self._visible = False
+        self._shown_by = None  # 'hover' | 'click'
 
     def enterEvent(self, e):
+        # 窗口刚打开时鼠标可能恰好停在 ℹ 上（Qt 会补发 enter 事件），
+        # 此处直接拦截，避免"一打开就弹码率表"
+        win = self.window()
+        if getattr(win, "_hover_ready_at", 0.0) > _now():
+            return
         self._timer.start()
         super().enterEvent(e)
 
     def leaveEvent(self, e):
         self._timer.stop()
-        if not self._visible:
+        if self._shown_by == "hover":
             self.popup.hide()
+            self._shown_by = None
         super().leaveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        # 点击兜底：hover 失效的环境也能查看码率表
+        # 点击兜底：hover 失效的环境也能查看码率表；再点一次关闭
         if e.button() == Qt.MouseButton.LeftButton:
             self._timer.stop()
-            if self._visible:
+            if self._shown_by:
                 self.popup.hide()
-                self._visible = False
+                self._shown_by = None
             else:
-                self.popup.show_near_cursor()
-                self._visible = True
+                self.popup.show_below(self)
+                self._shown_by = "click"
         super().mouseReleaseEvent(e)
 
-    def _show(self):
-        self.popup.show_near_cursor()
-        self._visible = True
+    def _show(self):  # hover 定时器触发
+        # 窗口刚显示 1.5 秒内忽略 hover，避免"一打开就弹窗"
+        win = self.window()
+        if getattr(win, "_hover_ready_at", 0.0) > _now():
+            self._shown_by = None
+            return
+        self.popup.show_below(self)
+        self._shown_by = "hover"
 
 
 class RateTablePopup(QFrame):
@@ -128,35 +147,45 @@ class RateTablePopup(QFrame):
             "QLabel { background:transparent; }")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
-        title = QLabel(f"{PRESET_YOUTUBE} · 标准码率视频")
-        title.setStyleSheet("font-weight:bold; color:#111827;")
-        note = QLabel("按输出短边与帧率自动匹配")
-        note.setStyleSheet("color:#6b7280; font-size:9pt;")
-        table = QLabel(table_html())
-        table.setTextFormat(Qt.TextFormat.RichText)
-        table.setStyleSheet(
+        self.title_label = QLabel("")
+        self.title_label.setStyleSheet("font-weight:bold; color:#111827;")
+        self.note_label = QLabel("按输出短边与帧率自动匹配")
+        self.note_label.setStyleSheet("color:#6b7280; font-size:9pt;")
+        self.table_label = QLabel("")
+        self.table_label.setTextFormat(Qt.TextFormat.RichText)
+        self.table_label.setStyleSheet(
             "font-size:9.5pt; "
             "td,th { border:1px solid #e5e7eb; padding:3px 10px; }")
-        lay.addWidget(title)
-        lay.addWidget(table)
-        lay.addWidget(note)
+        lay.addWidget(self.title_label)
+        lay.addWidget(self.table_label)
+        lay.addWidget(self.note_label)
+        # 注意：不要在这里调用 hide()——对未显示的 Qt.Window 子窗口
+        # hide() 在 Windows 平台会触发 quitOnLastWindowClosed 导致程序退出。
+        # QFrame 构造后默认即隐藏，无需额外处理。
 
-    def show_near_cursor(self):
-        gpos = QCursor.pos()
+    def set_preset(self, preset: str):
+        """切换预设时更新标题与码率表"""
+        self.title_label.setText(f"{preset} · 标准码率视频")
+        self.table_label.setText(table_html(preset))
+
+    def show_below(self, anchor):
+        """定位到触发控件（ℹ）正下方显示，不跟随鼠标。"""
+        # 内容未设置则不显示（防止空白框）
+        if not self.table_label.text():
+            return
         self.adjustSize()
         scr = QGuiApplication.primaryScreen().availableGeometry()
-        gx, gy = gpos.x() + 18, gpos.y() + 18
+        anchor_bottom = anchor.mapToGlobal(QPoint(0, anchor.height() + 4))
+        gx, gy = anchor_bottom.x(), anchor_bottom.y()
         if gx + self.width() > scr.right():
-            gx = gpos.x() - self.width() - 18
+            gx = scr.right() - self.width()
         if gy + self.height() > scr.bottom():
-            gy = gpos.y() - self.height() - 18
+            gy = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height() - 4
         target = QPoint(max(gx, scr.left()), max(gy, scr.top()))
-        # 窗口带父窗口时 move() 使用相对父窗口坐标，需把全局坐标转换过去
-        if self.parentWidget():
-            self.move(self.parentWidget().mapFromGlobal(target))
-        else:
-            self.move(target)
+        # 弹窗为无父窗口的独立顶层窗口，move 直接用全局坐标
+        self.move(target)
         self.show()
+        self.raise_()
 
 
 class DropZone(QFrame):
@@ -221,7 +250,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_TITLE)
         self.resize(920, 680)
         self.files = []          # [(abs_path, display_name, size)]
+        self._estimates = {}     # path -> 预计字节数 / -1(无法估算)
         self.worker = None
+        self.est_worker = None
+        self._hover_ready_at = 0.0
         self._build_ui()
         self._apply_qss()
         # 整个窗口都接受拖入视频（拖到列表/按钮区域也能添加）
@@ -240,6 +272,17 @@ class MainWindow(QMainWindow):
             self._add_files(files)
         e.acceptProposedAction()
 
+    def closeEvent(self, e):
+        # 弹窗是无父窗口的独立顶层窗口，主窗口关闭时需一并关闭
+        self.popup.close()
+        super().closeEvent(e)
+
+    def showEvent(self, e):
+        # 窗口刚显示时鼠标可能恰好停在 ℹ 上（Qt 会补发 enter 事件），
+        # 会导致弹窗"一打开就出现"。设置 2 秒的 hover 冷却期。
+        self._hover_ready_at = _now() + 2.0
+        super().showEvent(e)
+
     # ---------- UI ----------
     def _build_ui(self):
         central = QWidget()
@@ -248,33 +291,22 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(20, 16, 20, 10)
         root.setSpacing(12)
 
-        # 标题
-        title_row = QHBoxLayout()
-        left = QVBoxLayout()
-        t = QLabel(APP_TITLE)
-        t.setObjectName("title")
-        st = QLabel("视频格式转换 · 自动匹配码率 · 有显卡优先硬件编码")
-        st.setObjectName("subtitle")
-        left.addWidget(t)
-        left.addWidget(st)
-        title_row.addLayout(left)
-        title_row.addStretch()
-        root.addLayout(title_row)
-
         # 拖拽区
         self.dropzone = DropZone()
         self.dropzone.on_files_dropped = _SignalForwarder(self._add_files)
         root.addWidget(self.dropzone)
 
         # 文件列表
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["文件名", "大小", "状态", ""])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(
+            ["文件名", "大小", "预计转码后大小", "状态", "操作"])
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(
             0, self.table.horizontalHeader().ResizeMode.Stretch)
         self.table.setColumnWidth(1, 90)
-        self.table.setColumnWidth(2, 220)
-        self.table.setColumnWidth(3, 44)
+        self.table.setColumnWidth(2, 120)
+        self.table.setColumnWidth(3, 200)
+        self.table.setColumnWidth(4, 52)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(
             self.table.EditTrigger.NoEditTriggers)
@@ -305,23 +337,23 @@ class MainWindow(QMainWindow):
         pl = QLabel("预设")
         pl.setObjectName("fieldLabel")
         self.preset_combo = QComboBox()
-        self.preset_combo.addItems(list(PRESETS.keys()))
+        self.preset_combo.addItems(PRESET_NAMES)
+        self.preset_combo.setCurrentText(DEFAULT_PRESET)  # 默认 YouTube
         self.preset_combo.setFixedWidth(150)
-        self.tier_combo = QComboBox()
-        self.tier_combo.addItems(PRESETS[PRESET_YOUTUBE]["tiers"])
-        self.tier_combo.setFixedWidth(150)
-        self.popup = RateTablePopup(self)
+        self.popup = RateTablePopup()  # 无父窗口：不随主窗口自动显示
+        self.popup.set_preset(DEFAULT_PRESET)
         self.info_label = InfoLabel(self.popup)
         tip = QLabel("悬停或点击 ℹ 查看码率表")
         tip.setStyleSheet("color:#9ca3af; font-size:9pt;")
         preset_row.addWidget(pl)
         preset_row.addWidget(self.preset_combo)
-        preset_row.addWidget(self.tier_combo)
         preset_row.addWidget(self.info_label)
         preset_row.addWidget(tip)
         preset_row.addStretch()
         cl.addLayout(preset_row)
         root.addWidget(card)
+        # 切换平台 -> 更新 hover 码率表 + 重新估算
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
 
         # 操作按钮
         btn_row = QHBoxLayout()
@@ -358,6 +390,11 @@ class MainWindow(QMainWindow):
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(footer)
 
+    def _on_preset_changed(self, idx):
+        preset = self.preset_combo.itemText(idx) or DEFAULT_PRESET
+        self.popup.set_preset(preset)
+        self._start_estimate()
+
     def _apply_qss(self):
         QApplication.instance().setStyleSheet(_QSS)
 
@@ -388,35 +425,51 @@ class MainWindow(QMainWindow):
             self.status.setText(f"已添加 {added} 个视频")
             log.info("添加 %d 个视频: %s", added,
                      [os.path.basename(f[0]) for f in self.files[-added:]])
+            self._start_estimate()
 
     def _refresh_table(self):
         self.table.setRowCount(len(self.files))
-        for i, (_p, name, size) in enumerate(self.files):
+        for i, (p, name, size) in enumerate(self.files):
             self.table.setItem(i, 0, QTableWidgetItem(name))
             it = QTableWidgetItem(_human_size(size))
             it.setTextAlignment(Qt.AlignmentFlag.AlignRight
                                 | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(i, 1, it)
-            self.table.setItem(i, 2, QTableWidgetItem("等待中"))
-            # 单行移除按钮
-            btn = QPushButton("✕")
+            est = self._estimates.get(p)
+            if est is None:
+                est_text = "计算中…"
+            elif est == -1:
+                est_text = "—"
+            else:
+                est_text = _human_size(est)
+            eit = QTableWidgetItem(est_text)
+            eit.setTextAlignment(Qt.AlignmentFlag.AlignRight
+                                 | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(i, 2, eit)
+            self.table.setItem(i, 3, QTableWidgetItem("等待中"))
+            # 单行移除按钮（大写 X；必须 padding:0，否则全局按钮样式的
+            # padding 会把 26px 宽按钮里的文字挤出可视区，显示为空白）
+            btn = QPushButton("X")
             btn.setFixedSize(26, 24)
             btn.setToolTip("移除该文件")
             btn.setStyleSheet(
                 "QPushButton { background:transparent; border:none;"
-                "color:#9ca3af; font-size:11pt; font-weight:bold; }"
+                "padding:0; color:#6b7280; font-size:12pt;"
+                "font-weight:bold; }"
                 "QPushButton:hover { color:#dc2626; }")
             btn.clicked.connect(lambda _=False, idx=i: self._remove_file(idx))
-            self.table.setCellWidget(i, 3, btn)
+            self.table.setCellWidget(i, 4, btn)
 
     def _remove_file(self, idx):
         if self.worker and self.worker.isRunning():
             return  # 转码中不允许移除
         if 0 <= idx < len(self.files):
             removed = self.files.pop(idx)[1]
+            self._estimates.pop(removed, None)
             self._refresh_table()
             self.status.setText(
                 f"已移除 {removed}，剩余 {len(self.files)} 个")
+            self._start_estimate()
 
     def _choose_outdir(self):
         d = QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -427,9 +480,29 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
         self.files.clear()
+        self._estimates.clear()
         self.table.setRowCount(0)
         self.progress.setValue(0)
         self.status.setText("就绪")
+
+    # ---------- 预计大小估算 ----------
+    def _start_estimate(self):
+        if self.est_worker and self.est_worker.isRunning():
+            self.est_worker.requestInterruption()
+        self.est_worker = EstimateWorker(
+            [(p, n) for p, n, _s in self.files],
+            self.preset_combo.currentText(), self)
+        self.est_worker.estimate_ready.connect(self._on_estimate)
+        self.est_worker.start()
+
+    def _on_estimate(self, idx, est_bytes):
+        if 0 <= idx < len(self.files):
+            p = self.files[idx][0]
+            self._estimates[p] = est_bytes if est_bytes is not None else -1
+            item = self.table.item(idx, 2)
+            if item:
+                item.setText(_human_size(est_bytes)
+                             if est_bytes is not None else "—")
 
     # ---------- 转码 ----------
     def _start(self):
@@ -451,9 +524,12 @@ class MainWindow(QMainWindow):
             return
 
         out_dir = self.out_edit.text().strip()
-        log.info("开始转码: %d 个文件, 输出目录=%r", len(self.files),
-                 out_dir or "(视频同目录)")
-        self.worker = TranscodeWorker(list(self.files), out_dir, self)
+        log.info("开始转码: %d 个文件, 输出目录=%r, 预设=%s", len(self.files),
+                 out_dir or "(视频同目录)", self.preset_combo.currentText())
+        self.worker = TranscodeWorker(
+            list(self.files), out_dir,
+            self.preset_combo.currentText(), "标准码率视频",
+            self)
         self.worker.file_started.connect(self._on_file_started)
         self.worker.file_progress.connect(self._on_file_progress)
         self.worker.file_finished.connect(self._on_file_finished)
@@ -506,6 +582,29 @@ class MainWindow(QMainWindow):
             self.status.setText(f"完成：成功 {ok_count} / 失败 {fail_count} / 共 {total}")
         else:
             self.status.setText(f"全部完成：{total} 个视频转码成功")
+
+
+class EstimateWorker(QThread):
+    """后台探测视频并估算转码后大小（每个文件一次 ffprobe）"""
+
+    estimate_ready = Signal(int, object)  # index, 字节数或 None
+
+    def __init__(self, files: list, preset: str = DEFAULT_PRESET,
+                 parent=None):
+        super().__init__(parent)
+        self.files = files  # [(path, name)]
+        self.preset = preset
+
+    def run(self):
+        from .transcoder import estimate_output_size, probe
+        for i, (path, _name) in enumerate(self.files):
+            if self.isInterruptionRequested():
+                return
+            try:
+                est = estimate_output_size(probe(path), self.preset)
+            except Exception:  # noqa: BLE001 探测失败按无法估算处理
+                est = None
+            self.estimate_ready.emit(i, est)
 
 
 class _SignalForwarder:

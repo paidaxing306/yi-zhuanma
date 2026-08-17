@@ -15,7 +15,7 @@ import threading
 from PySide6.QtCore import QThread, Signal
 
 from . import ffmpeg_util
-from .presets import pick_profile
+from .presets import DEFAULT_PRESET, pick_profile
 
 log = logging.getLogger("yizhuanma")
 
@@ -119,14 +119,23 @@ def _is_hw_failure(stderr: str, encoder: str) -> bool:
 
 
 def build_command(in_path: str, out_path: str, encoder: str,
-                  profile: dict) -> list:
-    """构造 ffmpeg 转码命令。profile: pick_profile() 的返回值"""
+                  profile: dict, fps: float = 0.0, vf: str | None = None) -> list:
+    """构造 ffmpeg 转码命令。
+
+    profile: pick_profile() 的返回值
+    fps: 源帧率，用于关键帧间隔（GOP = 2 秒）
+    vf: 可选视频滤镜（如 1080p 封顶缩放）
+    """
     br = profile["bitrate_kbps"]
     abr = profile["audio_kbps"]
     cmd = [
         ffmpeg_util.ffmpeg_path(),
         "-y", "-hide_banner", "-nostdin",
         "-i", in_path,
+    ]
+    if vf:
+        cmd += ["-vf", vf]
+    cmd += [
         "-sn",                                   # 忽略字幕
         "-c:v", encoder,
         "-b:v", f"{br}k", "-maxrate", f"{br}k",
@@ -141,8 +150,11 @@ def build_command(in_path: str, out_path: str, encoder: str,
         cmd += ["-preset", "medium"]
     else:  # libx264
         cmd += ["-preset", "medium"]
+    # 关键帧间隔 2 秒（建议的分发参数）
+    if fps > 0:
+        cmd += ["-g", str(max(1, int(round(fps * 2))))]
     cmd += [
-        "-c:a", "aac", "-b:a", f"{abr}k",
+        "-c:a", "aac", "-b:a", f"{abr}k", "-ar", "48000",
         "-movflags", "+faststart",
         "-progress", "pipe:1", "-nostats",
         out_path,
@@ -186,6 +198,18 @@ def unique_output_path(out_dir: str, in_path: str) -> str:
     return target
 
 
+def estimate_output_size(info: dict, preset: str = DEFAULT_PRESET) -> int | None:
+    """按选档码率估算转码后文件大小（字节）。info 为 probe() 返回值。"""
+    if not info.get("duration"):
+        return None
+    try:
+        profile = pick_profile(info["short_edge"], info["fps"], preset)
+    except Exception:  # noqa: BLE001
+        return None
+    total_kbps = profile["bitrate_kbps"] + profile["audio_kbps"]
+    return int(total_kbps * 1000 / 8 * info["duration"])
+
+
 class TranscodeWorker(QThread):
     """顺序转码任务队列（单线程，避免 CPU 竞争）"""
 
@@ -194,11 +218,15 @@ class TranscodeWorker(QThread):
     file_finished = Signal(int, bool, str)    # index, ok, 消息
     all_finished = Signal(int, int)           # 成功数, 失败数
 
-    def __init__(self, files: list, out_dir: str, parent=None):
+    def __init__(self, files: list, out_dir: str,
+                 preset: str = DEFAULT_PRESET, tier: str = "标准码率视频",
+                 parent=None):
         super().__init__(parent)
         # files 元素为 (路径, 显示名) 或 (路径, 显示名, 大小)，统一为 2 元组
         self.files = [(f[0], f[1]) for f in files]
         self.out_dir = out_dir
+        self.preset = preset
+        self.tier = tier
         self._cancel = threading.Event()
 
     def cancel(self):
@@ -216,9 +244,11 @@ class TranscodeWorker(QThread):
                 continue
             try:
                 info = probe(path)
-                profile = pick_profile(info["short_edge"], info["fps"])
+                profile = pick_profile(info["short_edge"], info["fps"],
+                                       self.preset, self.tier)
                 desc = (f"{info['width']}x{info['height']} {info['fps']:.2f}fps "
-                        f"-> {profile['label']} {profile['bitrate_kbps']}k")
+                        f"-> {self.preset} {profile['label']} "
+                        f"{profile['bitrate_kbps']}k")
                 log.info("[%d/%d] %s: %s", i + 1, len(self.files), name, desc)
                 self.file_started.emit(i, name, desc)
                 ok, msg = self._transcode_one(path, info, profile, i)
@@ -239,10 +269,19 @@ class TranscodeWorker(QThread):
         # 输出目录留空 = 输出到视频所在目录
         out_dir = self.out_dir or os.path.dirname(path)
         out_path = unique_output_path(out_dir, path)
+        # 抖音/小红书等 1080p 封顶预设：超高清源缩到最长边 1080
+        vf = None
+        if profile.get("cap_1080") and \
+                max(info["width"], info["height"]) > 1080:
+            vf = ("scale=-2:1080" if info["width"] >= info["height"]
+                  else "scale=1080:-2")
+            log.info("超高清源 %.0fx%.0f, %s 预设封顶 1080p, 滤镜: %s",
+                     info["width"], info["height"], self.preset, vf)
         encoder = pick_encoder() or "libx264"
         attempts = [encoder] + (["libx264"] if encoder != "libx264" else [])
         for enc in attempts:
-            cmd = build_command(path, out_path, enc, profile)
+            cmd = build_command(path, out_path, enc, profile,
+                                fps=info["fps"], vf=vf)
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace",
