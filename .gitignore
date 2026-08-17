@@ -1,0 +1,15 @@
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# 构建产物 (PyInstaller)
+build/
+dist/
+
+# 日志
+*.log
