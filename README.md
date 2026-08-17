@@ -3,7 +3,11 @@
 视频格式转换工具（Windows）：拖入视频按平台码率表自动转码，
 有 NVIDIA/AMD/Intel 显卡优先走硬件编码，无显卡自动降级 CPU。
 
-作者：黎超杰  联系方式：13567130573
+作者：黎超杰  联系方式：xxxxwoai@qq.com
+
+## 界面预览
+
+![运行界面](screenshots/main-ui.png)
 
 ## 功能
 

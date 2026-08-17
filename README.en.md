@@ -7,7 +7,11 @@ them automatically using YouTube's recommended bitrate table. Uses hardware
 encoding when an NVIDIA/AMD/Intel GPU is available, and falls back to CPU
 automatically otherwise.
 
-Author: Chaojie Li (黎超杰)  Contact: 13567130573
+Author: Chaojie Li (黎超杰)  Contact: xxxxwoai@qq.com
+
+## Screenshot
+
+![Main UI](screenshots/main-ui.png)
 
 ## Features
 
