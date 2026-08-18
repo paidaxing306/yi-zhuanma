@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""ffmpeg / ffprobe 定位：开发环境用系统 PATH 或 C:/ffmpeg/bin，
+"""ffmpeg / ffprobe 定位：开发环境用系统 PATH 或平台固定路径，
 PyInstaller 打包后从 _MEIPASS 解压目录取随包携带的二进制。"""
 import os
 import shutil
 import sys
 
-# 打包时随附的二进制（build.bat / spec 里 --add-binary）
-_BUNDLED = ["ffmpeg.exe", "ffprobe.exe"]
+# 打包时随附的二进制（build.bat / build_ubuntu.sh 里 --add-binary）
+# Windows 平台带 .exe 后缀，macOS/Linux 无后缀
+_IS_WIN = os.name == "nt"
+_BUNDLED = (["ffmpeg.exe", "ffprobe.exe"] if _IS_WIN
+            else ["ffmpeg", "ffprobe"])
 
-_FALLBACK_DIR = r"C:/ffmpeg/bin"
+_FALLBACK_DIR = r"C:/ffmpeg/bin" if _IS_WIN else "/usr/local/bin"
 
 
 def _frozen_dir() -> str:
@@ -28,7 +31,7 @@ def _find(binary: str) -> str:
     p = shutil.which(binary)
     if p:
         return p
-    # 3) 开发环境：本机固定路径
+    # 3) 开发环境：平台固定路径
     p = os.path.join(_FALLBACK_DIR, binary)
     if os.path.isfile(p):
         return p
@@ -36,11 +39,11 @@ def _find(binary: str) -> str:
 
 
 def ffmpeg_path() -> str:
-    return _find("ffmpeg.exe")
+    return _find(_BUNDLED[0])
 
 
 def ffprobe_path() -> str:
-    return _find("ffprobe.exe")
+    return _find(_BUNDLED[1])
 
 
 def check_available() -> tuple:

@@ -64,6 +64,10 @@ _PRESET_DEFS = {
 PRESET_NAMES = list(_PRESET_DEFS.keys())          # 预设顺序（下拉框顺序）
 DEFAULT_PRESET = "YouTube"                        # 默认选中 YouTube
 
+# 支持的视频扩展名（GUI 拖拽 / CLI 目录扫描共用，不依赖 Qt）
+VIDEO_EXTS = {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv",
+              ".webm", ".ts", ".m4v", ".3gp", ".mpg", ".mpeg"}
+
 # 兼容旧引用
 PRESET_YOUTUBE = "YouTube"
 

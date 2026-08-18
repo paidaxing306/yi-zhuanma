@@ -63,6 +63,8 @@ python main.py
 
 ## 打包分发
 
+### Windows（图形界面版）
+
 双击 `build.bat`，产物 `dist/易转码.exe`（单文件，客户免安装、零依赖）。
 
 注意：
@@ -70,6 +72,21 @@ python main.py
 - **商用分发请把 C:/ffmpeg/bin 换成 LGPL 构建版 ffmpeg**（如 BtbN 的
   ffmpeg-latest-win64-lgpl），避免 GPL 许可证传染
 - 若杀毒软件误报，把 build.bat 里 `--onefile` 改为 `--onedir`（文件夹模式，误报率低）
+
+### Ubuntu（命令行版，无界面）
+
+在 Ubuntu 上执行 `bash build_ubuntu.sh`，产物 `dist/yizhuanma`（单文件）。
+
+用法：
+
+```bash
+./dist/yizhuanma <视频文件或文件夹> [输出目录] [--preset 平台]
+```
+
+- 入参为视频文件或包含视频的文件夹（递归扫描 mp4/avi/mkv/mov 等）
+- 未指定输出目录：自动在输入目录下创建 `transcoded` 并输出到其中
+- 指定输出目录：转码结果写入该目录
+- `--preset` 可选：B站 / 抖音 / 小红书 / YouTube（默认 YouTube）
 
 ## 项目结构
 

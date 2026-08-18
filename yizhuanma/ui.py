@@ -18,12 +18,11 @@ from PySide6.QtWidgets import (
 )
 
 from . import AUTHOR, CONTACT, APP_TITLE, __version__
-from .presets import DEFAULT_PRESET, PRESET_NAMES, table_html
+from .presets import DEFAULT_PRESET, PRESET_NAMES, VIDEO_EXTS, table_html
 
 log = logging.getLogger("yizhuanma")
 
-_VIDEO_EXTS = {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv",
-               ".webm", ".ts", ".m4v", ".3gp", ".mpg", ".mpeg"}
+_VIDEO_EXTS = VIDEO_EXTS
 
 _QSS = """
 QMainWindow, QWidget { background: #f5f6fa; color: #1f2937;
@@ -632,14 +631,23 @@ class MainWindow(QMainWindow):
         self._open_output_dir()
 
     def _open_output_dir(self):
-        """在资源管理器中打开输出目录（Windows）"""
+        """在系统文件管理器中打开输出目录"""
+        import subprocess
+        import sys as _sys
+
         out_dir = self.out_edit.text().strip()
-        if out_dir and os.path.isdir(out_dir):
-            try:
-                os.startfile(out_dir)  # noqa: S606 Windows 专用
-                log.info("已打开输出目录: %s", out_dir)
-            except OSError:
-                log.warning("打开输出目录失败: %s", out_dir)
+        if not out_dir or not os.path.isdir(out_dir):
+            return
+        try:
+            if _sys.platform == "win32":
+                os.startfile(out_dir)  # noqa: S606
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", out_dir])
+            else:
+                subprocess.Popen(["xdg-open", out_dir])
+            log.info("已打开输出目录: %s", out_dir)
+        except OSError:
+            log.warning("打开输出目录失败: %s", out_dir)
 
 
 class EstimateWorker(QThread):
