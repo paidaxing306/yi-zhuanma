@@ -42,8 +42,9 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
   sudo apt update
   sudo apt install -y ffmpeg
 fi
-if ! command -v python3 >/dev/null 2>&1; then
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -m pip --version >/dev/null 2>&1; then
   echo "    安装 python3 / pip ..."
+  sudo apt update
   sudo apt install -y python3 python3-pip
 fi
 
