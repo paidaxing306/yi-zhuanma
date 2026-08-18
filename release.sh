@@ -71,6 +71,8 @@ rm -f .release_body.json
 
 for f in "dist/易转码.exe" "dist/$LINUX_ASSET"; do
   name="$(basename "$f")"
+  # Windows 资产统一用英文名 yizhuanma.exe (中文名在 GitHub 上传 URL 中会损坏, 如 default.exe)
+  [ "$name" = "易转码.exe" ] && name="yizhuanma.exe"
   echo "    上传 $name ($(du -h "$f" | cut -f1)) ..."
   curl -s --retry 3 --retry-delay 5 \
     -H "Authorization: token $TOKEN" -H "Content-Type: application/octet-stream" \
