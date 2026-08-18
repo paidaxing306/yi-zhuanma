@@ -10,6 +10,7 @@ __pycache__/
 # 构建产物 (PyInstaller)
 build/
 dist/
+*.spec
 
 # 日志
 *.log
