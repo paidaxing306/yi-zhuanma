@@ -355,7 +355,7 @@ class MainWindow(QMainWindow):
         lbl = QLabel("输出目录")
         lbl.setObjectName("fieldLabel")
         self.out_edit = QLineEdit()
-        self.out_edit.setPlaceholderText("留空 = 输出到视频所在目录")
+        self.out_edit.setPlaceholderText("默认：第一个视频旁的 已转码 目录")
         btn_out = QPushButton("选择…")
         btn_out.clicked.connect(self._choose_outdir)
         out_row.addWidget(lbl)
@@ -452,11 +452,26 @@ class MainWindow(QMainWindow):
             existing.add(p)
             added += 1
         if added:
+            # 输出目录 = 第一个视频所在目录下的「已转码」子目录
+            self._set_output_dir_from_first_video()
             self._refresh_table()
             self.status.setText(f"已添加 {added} 个视频")
             log.info("添加 %d 个视频: %s", added,
                      [os.path.basename(f[0]) for f in self.files[-added:]])
             self._start_estimate()
+
+    def _set_output_dir_from_first_video(self):
+        """在第一个视频所在目录创建「已转码」子目录并设为输出目录"""
+        if not self.files:
+            return
+        first_dir = os.path.dirname(self.files[0][0])
+        out_dir = os.path.join(first_dir, "已转码")
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except OSError:
+            log.warning("创建输出目录失败: %s", out_dir)
+            return
+        self.out_edit.setText(out_dir)
 
     def _refresh_table(self):
         self.table.setRowCount(len(self.files))
@@ -613,6 +628,18 @@ class MainWindow(QMainWindow):
             self.status.setText(f"完成：成功 {ok_count} / 失败 {fail_count} / 共 {total}")
         else:
             self.status.setText(f"全部完成：{total} 个视频转码成功")
+        # 转码完成后默认打开输出目录，让用户直接看到结果
+        self._open_output_dir()
+
+    def _open_output_dir(self):
+        """在资源管理器中打开输出目录（Windows）"""
+        out_dir = self.out_edit.text().strip()
+        if out_dir and os.path.isdir(out_dir):
+            try:
+                os.startfile(out_dir)  # noqa: S606 Windows 专用
+                log.info("已打开输出目录: %s", out_dir)
+            except OSError:
+                log.warning("打开输出目录失败: %s", out_dir)
 
 
 class EstimateWorker(QThread):

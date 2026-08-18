@@ -45,7 +45,9 @@ def probe(path: str) -> dict:
         "-show_format", "-show_streams", path,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=120)
+                          encoding="utf-8", errors="replace", timeout=120,
+                          creationflags=getattr(subprocess,
+                                                "CREATE_NO_WINDOW", 0))
     if proc.returncode != 0:
         raise ProbeError(f"ffprobe 读取失败: {proc.stderr.strip()[:300]}")
     data = json.loads(proc.stdout or "{}")
@@ -92,6 +94,7 @@ def _available_encoders() -> list:
             [ffmpeg, "-hide_banner", "-encoders"],
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError:
         return []

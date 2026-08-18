@@ -16,8 +16,10 @@ Author: Chaojie Li (黎超杰)  Contact: xxxxwoai@qq.com
 ## Features
 
 - Drag & drop or select multiple videos (mp4, avi, mkv, mov, wmv, flv, webm, ts, m4v, etc.)
-- Configurable output directory (leave empty = output next to the source video
-  as `original-name.mp4`; auto-appends a number when the source is already mp4 to avoid overwriting)
+- Output directory defaults to a `已转码` (transcoded) folder next to the first
+  video (auto-created, still editable); the folder opens automatically when
+  transcoding finishes. Output filename is `original-name.mp4` (auto-appends a
+  number when the source is already mp4 to avoid overwriting)
 - Preset: YouTube (standard bitrate videos, hover the ℹ icon to see the bitrate table)
 - Automatic bitrate matching: picks a tier from the table based on the video's
   short edge and frame rate (H.264 + AAC, MP4 container)
