@@ -1,7 +1,10 @@
 # 易转码
 
-视频格式转换工具（Windows）：拖入视频按平台码率表自动转码，
+视频格式转换工具：拖入视频按平台码率表自动转码，
 有 NVIDIA/AMD/Intel 显卡优先走硬件编码，无显卡自动降级 CPU。
+
+- **Windows**：图形界面版（拖拽即转）
+- **Ubuntu**：命令行版（`yizhuanma <文件或文件夹> [输出目录]`，无界面）
 
 作者：黎超杰  联系方式：xxxxwoai@qq.com
 
@@ -100,12 +103,16 @@ yizhuanma <视频文件或文件夹> [输出目录] [--preset 平台]
 ## 项目结构
 
 ```
-main.py              入口
+main.py               Windows 图形界面入口
+cli_main.py           Ubuntu 命令行入口（打包用）
 yizhuanma/
-  __init__.py        版本/作者信息
-  presets.py         平台码率表 + 档位选择
-  transcoder.py      ffprobe 探测、编码器选择、ffmpeg 调用、进度解析
-  ffmpeg_util.py     ffmpeg/ffprobe 定位（开发/打包）
-  ui.py              PySide6 界面（拖拽、任务列表、hover 码率表）
-build.bat            PyInstaller 打包脚本
+  __init__.py         版本/作者信息
+  presets.py          平台码率表 + 档位选择 + 视频扩展名
+  transcoder.py       ffprobe 探测、编码器选择、ffmpeg 调用、进度解析
+  ffmpeg_util.py      ffmpeg/ffprobe 定位（开发/打包，跨平台）
+  ui.py               PySide6 界面（拖拽、任务列表、hover 码率表）
+  cli.py              Ubuntu 命令行逻辑（文件/文件夹扫描、transcoded 输出规则）
+build.bat             Windows 打包脚本
+build_ubuntu.sh       Ubuntu 打包脚本（仅打包，产物 dist/yizhuanma）
+install_ubuntu.sh     Ubuntu 一键安装脚本（打包 + 安装为系统命令 yizhuanma）
 ```
