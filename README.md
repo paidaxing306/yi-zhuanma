@@ -100,6 +100,28 @@ yizhuanma <视频文件或文件夹> [输出目录] [--preset 平台]
 
 卸载：`sudo rm /usr/local/bin/yizhuanma`
 
+### macOS（图形界面版）
+
+分别构建 Apple Silicon 和 Intel 包，发布文件名固定为：
+
+- `yizhuanma-v1.2.0-macos-arm64.zip`（M1/M2/M3/M4/M5）
+- `yizhuanma-v1.2.0-macos-x86_64.zip`（Intel Mac）
+
+必须在 macOS 上构建，并确保当前 `python3` 和 `ffmpeg`/`ffprobe` 都是目标架构：
+
+```bash
+brew install ffmpeg
+python3 -m pip install -r requirements.txt pyinstaller
+
+# Apple Silicon Mac
+bash build_macos.sh arm64
+
+# Intel Mac，或 Apple Silicon 上通过 Rosetta 使用 Intel Python 与 Intel Homebrew 构建
+bash build_macos.sh x86_64
+```
+
+脚本会生成可分发的 `.app` ZIP。正式对外发布前应使用 Apple Developer ID 签名并完成公证，否则用户首次打开时可能会看到 Gatekeeper 安全提示。
+
 ## 项目结构
 
 ```
@@ -114,5 +136,6 @@ yizhuanma/
   cli.py              Ubuntu 命令行逻辑（文件/文件夹扫描、transcoded 输出规则）
 build.bat             Windows 打包脚本
 build_ubuntu.sh       Ubuntu 打包脚本（仅打包，产物 dist/yizhuanma）
+build_macos.sh        macOS 图形界面打包脚本（按 arm64/x86_64 分别构建）
 install_ubuntu.sh     Ubuntu 一键安装脚本（打包 + 安装为系统命令 yizhuanma）
 ```
