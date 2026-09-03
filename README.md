@@ -4,6 +4,7 @@
 有 NVIDIA/AMD/Intel 显卡优先走硬件编码，无显卡自动降级 CPU。
 
 - **Windows**：图形界面版（拖拽即转）
+- **macOS（Apple Silicon / Intel）**：图形界面版（dmg 安装包）
 - **Ubuntu**：命令行版（`yizhuanma <文件或文件夹> [输出目录]`，无界面）
 
 作者：黎超杰  联系方式：xxxxwoai@qq.com
@@ -14,11 +15,11 @@
 
 ## 功能
 
-- 拖入/选择多个视频（mp4、avi、mkv、mov、wmv、flv、webm、ts、m4v 等）
+- 拖入/选择多个视频（mp4、avi、mkv、mov、wmv、flv、webm、ts、m4v 等），也支持直接选择文件夹导入目录内全部视频
 - 预设平台：**B站 / 抖音 / 小红书 / YouTube**（悬停 ℹ 查看对应码率表）
 - 输出目录默认 = 第一个视频所在目录下的「已转码」文件夹（自动创建，可手动修改），
   转码完成后自动打开输出目录；文件名为 `原名.mp4`（源文件本身是 mp4 时自动加序号避免覆盖）
-- 列表显示：文件名 / 大小 / **预计转码后大小** / 状态，单行 × 移除
+- 列表显示：文件名 / 大小 / **预计转码后大小** / 状态；单行 × 移除，或 Alt+A 全选后右键菜单移除
 - 自动匹配码率：按视频短边与帧率从预设表选档（H.264 + AAC-LC，MP4 容器）
 - 抖音/小红书无 2K/4K 分发档，超高清源自动缩至 1080p（最高 1080p）
 - 编码器自动选择：h264_nvenc（N 卡）→ h264_amf（A 卡）→ h264_qsv（Intel 核显）→ libx264（CPU 兜底）
@@ -104,8 +105,8 @@ yizhuanma <视频文件或文件夹> [输出目录] [--preset 平台]
 
 分别构建 Apple Silicon 和 Intel 包，发布文件名固定为：
 
-- `yizhuanma-v1.2.0-macos-arm64.zip`（M1/M2/M3/M4/M5）
-- `yizhuanma-v1.2.0-macos-x86_64.zip`（Intel Mac）
+- `yizhuanma-v1.2.0-macos-arm64.dmg`（M1/M2/M3/M4/M5）
+- `yizhuanma-v1.2.0-macos-x86_64.dmg`（Intel Mac）
 
 必须在 macOS 上构建，并确保当前 `python3` 和 `ffmpeg`/`ffprobe` 都是目标架构：
 
@@ -120,7 +121,7 @@ bash build_macos.sh arm64
 bash build_macos.sh x86_64
 ```
 
-脚本会生成可分发的 `.app` ZIP。正式对外发布前应使用 Apple Developer ID 签名并完成公证，否则用户首次打开时可能会看到 Gatekeeper 安全提示。
+脚本会生成可分发的 dmg 安装包（打开后拖入 Applications 完成安装）。正式对外发布前应使用 Apple Developer ID 签名并完成公证，否则用户首次打开时可能会看到 Gatekeeper 安全提示。
 
 ## 项目结构
 
