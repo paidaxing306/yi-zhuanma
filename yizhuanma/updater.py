@@ -3,6 +3,8 @@
 
 检测失败或网络不可用时静默返回 None，不影响程序正常使用。
 """
+from __future__ import annotations
+
 import json
 import re
 import urllib.request

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """FFmpeg 探测与转码核心：ffprobe 取视频信息，自动选档、选编码器，转码并上报进度。
 
-编码器优先级：有显卡优先硬件（h264_nvenc -> h264_amf -> h264_qsv），
-硬件初始化失败自动降级 libx264（CPU）。
+编码器优先级：有显卡优先硬件（h264_nvenc -> h264_amf -> h264_qsv），硬件初始化失败自动降级 libx264（CPU）。
 """
+from __future__ import annotations
+
 import json
 import logging
 import os

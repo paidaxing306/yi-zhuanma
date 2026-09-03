@@ -6,14 +6,14 @@ import os
 import time as _time
 
 from PySide6.QtCore import QPoint, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QKeySequence, QShortcut
 
 
 def _now() -> float:
     return _time.monotonic()
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QLineEdit, QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -341,6 +341,11 @@ class MainWindow(QMainWindow):
             self.table.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(
             self.table.SelectionBehavior.SelectRows)
+        # Alt+A 全选列表；右键弹菜单（仅"移除"）
+        QShortcut(QKeySequence("Alt+A"), self.table, self.table.selectAll)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(
+            self._show_table_menu)
         root.addWidget(self.table, stretch=1)
 
         # 输出目录 + 预设卡片
@@ -429,12 +434,34 @@ class MainWindow(QMainWindow):
         QApplication.instance().setStyleSheet(_QSS)
 
     # ---------- 文件 ----------
+    _FILE_DIALOG_FILTER = (
+        "视频文件 (*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm "
+        "*.ts *.m4v *.3gp *.mpg *.mpeg);;所有文件 (*)")
+
     def _add_files(self, paths):
         if paths is None:
-            paths, _ = QFileDialog.getOpenFileNames(
-                self, "选择视频", "",
-                "视频文件 (*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm "
-                "*.ts *.m4v *.3gp *.mpg *.mpeg);;所有文件 (*)")
+            # 弹出菜单：选视频文件 / 选文件夹（导入目录内全部视频）
+            menu = QMenu(self)
+            act_file = menu.addAction("选择视频文件…")
+            act_dir = menu.addAction("选择文件夹（导入目录内全部视频）…")
+            chosen = menu.exec(QCursor.pos())
+            if chosen is act_file:
+                paths = QFileDialog.getOpenFileNames(
+                    self, "选择视频", "", self._FILE_DIALOG_FILTER)[0]
+            elif chosen is act_dir:
+                d = QFileDialog.getExistingDirectory(self, "选择文件夹")
+                paths = self._videos_in_dir(d) if d else []
+            else:
+                return
+        else:
+            # 拖拽进来的可能是目录：展开为其中的视频文件
+            expanded = []
+            for p in paths:
+                if os.path.isdir(p):
+                    expanded.extend(self._videos_in_dir(p))
+                else:
+                    expanded.append(p)
+            paths = expanded
         if not paths:
             return
         existing = {p for p, _n, _s in self.files}
@@ -458,6 +485,16 @@ class MainWindow(QMainWindow):
             log.info("添加 %d 个视频: %s", added,
                      [os.path.basename(f[0]) for f in self.files[-added:]])
             self._start_estimate()
+
+    def _videos_in_dir(self, d: str) -> list:
+        """递归列出目录内所有视频文件（按文件名排序）"""
+        exts = tuple(_VIDEO_EXTS)
+        result = []
+        for root, _dirs, names in os.walk(d):
+            for n in sorted(names):
+                if n.lower().endswith(exts):
+                    result.append(os.path.join(root, n))
+        return result
 
     def _set_output_dir_from_first_video(self):
         """在第一个视频所在目录创建「已转码」子目录并设为输出目录"""
@@ -515,6 +552,28 @@ class MainWindow(QMainWindow):
             self.status.setText(
                 f"已移除 {removed}，剩余 {len(self.files)} 个")
             self._start_estimate()
+
+    def _show_table_menu(self, pos):
+        """右键文件列表：菜单里只有"移除"，移除当前选中（单个或多个）"""
+        rows = sorted({i.row() for i in self.table.selectedIndexes()})
+        if not rows:
+            return
+        menu = QMenu(self.table)
+        act = menu.addAction("移除" if len(rows) == 1
+                             else f"移除选中（{len(rows)} 个）")
+        if menu.exec(self.table.viewport().mapToGlobal(pos)) is act:
+            self._remove_rows(rows)
+
+    def _remove_rows(self, rows):
+        if self.worker and self.worker.isRunning():
+            return  # 转码中不允许移除
+        for idx in sorted(rows, reverse=True):
+            if 0 <= idx < len(self.files):
+                path, _name, _size = self.files.pop(idx)
+                self._estimates.pop(path, None)
+        self._refresh_table()
+        self.status.setText(f"已移除，剩余 {len(self.files)} 个")
+        self._start_estimate()
 
     def _choose_outdir(self):
         d = QFileDialog.getExistingDirectory(self, "选择输出目录")

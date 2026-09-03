@@ -7,7 +7,7 @@
 #   bash build_macos.sh x86_64
 #
 # 构建产物:
-#   dist/yizhuanma-v<version>-macos-<architecture>.zip
+#   dist/yizhuanma-v<version>-macos-<architecture>.dmg
 # ============================================================
 set -euo pipefail
 
@@ -58,7 +58,7 @@ check_binary_arch "$FFPROBE_BIN"
 
 APP_NAME="易转码"
 APP_PATH="dist/$APP_NAME.app"
-ARCHIVE="dist/yizhuanma-v$VERSION-macos-$TARGET_ARCH.zip"
+DMG_PATH="dist/yizhuanma-v$VERSION-macos-$TARGET_ARCH.dmg"
 
 python3 -m pip install -r requirements.txt pyinstaller
 python3 -m PyInstaller --noconfirm --clean \
@@ -71,7 +71,16 @@ python3 -m PyInstaller --noconfirm --clean \
 
 # 让未配置开发者证书的本机构建可正常启动；正式发布应替换为 Developer ID 签名并公证。
 codesign --force --deep --sign - "$APP_PATH"
-rm -f "$ARCHIVE"
-ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE"
 
-echo "打包成功: $ARCHIVE"
+# 打包为 dmg（拖拽安装窗口：打开后可见 .app 和 Applications 链接）
+STAGING="$(mktemp -d)"
+trap 'rm -rf "$STAGING"' EXIT
+cp -R "$APP_PATH" "$STAGING/"
+ln -s /Applications "$STAGING/Applications"
+rm -f "$DMG_PATH"
+hdiutil create -volname "$APP_NAME" \
+  -srcfolder "$STAGING" \
+  -ov -format UDZO \
+  "$DMG_PATH"
+
+echo "打包成功: $DMG_PATH"

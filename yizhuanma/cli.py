@@ -9,6 +9,8 @@
   （输入是文件时，transcoded 建在文件所在目录）
 - 指定输出目录：转码结果写入该目录
 """
+from __future__ import annotations
+
 import argparse
 import logging
 import os
