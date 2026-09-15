@@ -10,6 +10,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import subprocess
 import threading
 
@@ -185,21 +186,40 @@ def _parse_progress_line(line: str) -> float | None:
     return None
 
 
-def unique_output_path(out_dir: str, in_path: str) -> str:
-    """生成不冲突的输出路径：原名.mp4。
+def unique_output_path(out_dir: str, in_path: str, ext: str = ".mp4") -> str:
+    """生成不冲突的输出路径：原名 + ext（默认 .mp4）。
 
-    源文件本身就是 mp4 且与输出同目录时，为避免覆盖源文件，
+    源文件本身与输出目标同名同目录时，为避免覆盖源文件，
     自动加序号：原名(1).mp4 / 原名(2).mp4 ...
     """
     stem = os.path.splitext(os.path.basename(in_path))[0]
-    target = os.path.join(out_dir, f"{stem}.mp4")
+    target = os.path.join(out_dir, f"{stem}{ext}")
     if os.path.abspath(target) == os.path.abspath(in_path):
-        target = os.path.join(out_dir, f"{stem}(1).mp4")
+        target = os.path.join(out_dir, f"{stem}(1){ext}")
     i = 1
     while os.path.exists(target):
-        target = os.path.join(out_dir, f"{stem}({i}).mp4")
+        target = os.path.join(out_dir, f"{stem}({i}){ext}")
         i += 1
     return target
+
+
+def human_size(n: int) -> str:
+    """字节数转可读文本（1.2 MB）"""
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024:
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
+
+
+def estimate_from_profile(info: dict, profile: dict) -> int | None:
+    """按已选档位的码率估算输出大小（字节）。info 为 probe() 返回值。"""
+    duration = info.get("duration") or 0.0
+    if not duration:
+        return None
+    total_kbps = profile["bitrate_kbps"] + profile["audio_kbps"]
+    return int(total_kbps * 1000 / 8 * duration)
 
 
 def estimate_output_size(info: dict, preset: str = DEFAULT_PRESET) -> int | None:
@@ -210,8 +230,15 @@ def estimate_output_size(info: dict, preset: str = DEFAULT_PRESET) -> int | None
         profile = pick_profile(info["short_edge"], info["fps"], preset)
     except Exception:  # noqa: BLE001
         return None
-    total_kbps = profile["bitrate_kbps"] + profile["audio_kbps"]
-    return int(total_kbps * 1000 / 8 * info["duration"])
+    return estimate_from_profile(info, profile)
+
+
+def file_size(path: str) -> int:
+    """文件大小（字节）；读取失败返回 0"""
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
 
 
 class TranscodeWorker(QThread):
@@ -272,6 +299,11 @@ class TranscodeWorker(QThread):
                        index: int) -> tuple:
         # 输出目录留空 = 输出到视频所在目录
         out_dir = self.out_dir or os.path.dirname(path)
+        # 预计转码后比源文件还大：转码没有收益，直接复制源文件（按完成处理）
+        est = estimate_from_profile(info, profile)
+        orig_size = file_size(path)
+        if est is not None and orig_size and est > orig_size:
+            return self._copy_source(path, out_dir, est, orig_size)
         out_path = unique_output_path(out_dir, path)
         # 抖音/小红书等 1080p 封顶预设：超高清源缩到最长边 1080
         vf = None
@@ -339,3 +371,23 @@ class TranscodeWorker(QThread):
             log.error("转码失败(编码器 %s): %s", enc, err.strip()[-300:])
             return False, f"转码失败: {err.strip()[-300:]}"
         return False, "转码失败: 编码器均不可用"
+
+    def _copy_source(self, path: str, out_dir: str, est: int,
+                     orig_size: int) -> tuple:
+        """预计转码后体积反而变大：跳过转码，把源文件复制到输出目录。"""
+        reason = (f"预计转码后 {human_size(est)} 大于原文件 "
+                  f"{human_size(orig_size)}")
+        if os.path.abspath(os.path.dirname(path)) == os.path.abspath(out_dir):
+            # 源文件本来就在输出目录，不必再复制一份
+            log.info("跳过转码: %s (%s)，源文件已在输出目录", path, reason)
+            return True, f"完成（{reason}，源文件已在输出目录）"
+        ext = os.path.splitext(path)[1]
+        dst = unique_output_path(out_dir, path, ext)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            shutil.copy2(path, dst)
+        except OSError as e:
+            log.error("复制源文件失败: %s -> %s (%s)", path, dst, e)
+            return False, f"复制源文件失败: {e}"
+        log.info("跳过转码, 直接复制源文件: %s -> %s (%s)", path, dst, reason)
+        return True, f"完成（{reason}，直接复制源文件）-> {os.path.basename(dst)}"

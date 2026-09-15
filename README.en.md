@@ -21,6 +21,9 @@ Author: Chaojie Li (黎超杰)  Contact: xxxxwoai@qq.com
   transcoding finishes. Output filename is `original-name.mp4` (auto-appends a
   number when the source is already mp4 to avoid overwriting)
 - Preset: YouTube (standard bitrate videos, hover the ℹ icon to see the bitrate table)
+- **Skips transcoding when the estimated result would be larger than the
+  source**: the source file is copied into the output directory as-is (original
+  extension kept) and the row is marked as finished
 - Automatic bitrate matching: picks a tier from the table based on the video's
   short edge and frame rate (H.264 + AAC, MP4 container)
 - Automatic encoder selection: h264_nvenc (NVIDIA) → h264_amf (AMD) →

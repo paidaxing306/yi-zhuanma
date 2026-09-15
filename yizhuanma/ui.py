@@ -527,6 +527,7 @@ class MainWindow(QMainWindow):
             eit = QTableWidgetItem(est_text)
             eit.setTextAlignment(Qt.AlignmentFlag.AlignRight
                                  | Qt.AlignmentFlag.AlignVCenter)
+            self._style_estimate(eit, i)
             self.table.setItem(i, 2, eit)
             self.table.setItem(i, 3, QTableWidgetItem("等待中"))
             # 单行移除按钮（大写 X；必须 padding:0，否则全局按钮样式的
@@ -607,6 +608,17 @@ class MainWindow(QMainWindow):
             if item:
                 item.setText(_human_size(est_bytes)
                              if est_bytes is not None else "—")
+                self._style_estimate(item, idx)
+
+    def _style_estimate(self, item, idx):
+        """预计转码后大于原文件时高亮：该文件将直接复制源文件，不转码"""
+        est = self._estimates.get(self.files[idx][0])
+        if est and est > 0 and est > self.files[idx][2]:
+            item.setForeground(QColor("#d97706"))
+            item.setToolTip("预计转码后比原文件大，将直接复制源文件（不转码）")
+        else:
+            item.setForeground(QColor("#1f2937"))
+            item.setToolTip("")
 
     # ---------- 转码 ----------
     def _start(self):
@@ -673,6 +685,9 @@ class MainWindow(QMainWindow):
             self._set_row_status(i, "✓ 完成", "#16a34a")
         else:
             self._set_row_status(i, "✗ " + msg, "#dc2626")
+        item = self.table.item(i, 2)
+        if item:  # 悬停查看详情（如"预计比原文件大，直接复制源文件"）
+            item.setToolTip(msg)
 
     def _on_all_finished(self, ok_count, fail_count):
         self.btn_start.setEnabled(True)
