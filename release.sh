@@ -20,6 +20,8 @@ BODY_FILE="${2:-}"
 cd "$(dirname "$0")"
 
 REPO="paidaxing306/yi-zhuanma"
+EXE_NAME="易转码-$VERSION"
+EXE_ASSET="yizhuanma-$VERSION.exe"
 LINUX_ASSET="yizhuanma-ubuntu-x86_64-$VERSION.tar.gz"
 
 # 工作区必须干净, 避免打包到旧代码
@@ -29,8 +31,8 @@ LINUX_ASSET="yizhuanma-ubuntu-x86_64-$VERSION.tar.gz"
 TOKEN="${GH_TOKEN:-$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p')}"
 [ -n "$TOKEN" ] || { echo "错误: 未取得 GitHub 凭据 (设置 GH_TOKEN 或配置 git credential store)"; exit 1; }
 
-echo "==> [1/4] 打包 Windows 版 易转码.exe"
-python -m PyInstaller --noconfirm --clean --name 易转码 --onefile --windowed \
+echo "==> [1/4] 打包 Windows 版 $EXE_NAME.exe"
+python -m PyInstaller --noconfirm --clean --name "$EXE_NAME" --onefile --windowed \
   --add-binary "C:/ffmpeg/bin/ffmpeg.exe:." \
   --add-binary "C:/ffmpeg/bin/ffprobe.exe:." \
   main.py
@@ -49,7 +51,7 @@ if [ -n "$BODY_FILE" ]; then
 else
   BODY="## 易转码 $VERSION
 
-- Windows: \`易转码.exe\`
+- Windows: \`$EXE_ASSET\`
 - Ubuntu x86_64: \`$LINUX_ASSET\`
 "
 fi
@@ -69,10 +71,10 @@ else
 fi
 rm -f .release_body.json
 
-for f in "dist/易转码.exe" "dist/$LINUX_ASSET"; do
+for f in "dist/$EXE_NAME.exe" "dist/$LINUX_ASSET"; do
   name="$(basename "$f")"
-  # Windows 资产统一用英文名 yizhuanma.exe (中文名在 GitHub 上传 URL 中会损坏, 如 default.exe)
-  [ "$name" = "易转码.exe" ] && name="yizhuanma.exe"
+  # Windows 资产统一用英文名 (中文名在 GitHub 上传 URL 中会损坏, 如 default.exe)
+  [ "$name" = "$EXE_NAME.exe" ] && name="$EXE_ASSET"
   echo "    上传 $name ($(du -h "$f" | cut -f1)) ..."
   curl -s --retry 3 --retry-delay 5 \
     -H "Authorization: token $TOKEN" -H "Content-Type: application/octet-stream" \
